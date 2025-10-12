@@ -150,3 +150,19 @@ func MethodToString(code codes.Code) string {
 		return fmt.Sprintf("0x%02x", code)
 	}
 }
+
+// MethodFromString converts a method string to a CoAP code
+func MethodFromString(method string) codes.Code {
+	switch method {
+	case "GET":
+		return codes.GET
+	case "POST":
+		return codes.POST
+	case "PUT":
+		return codes.PUT
+	case "DELETE":
+		return codes.DELETE
+	default:
+		return codes.GET
+	}
+}
