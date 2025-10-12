@@ -343,6 +343,7 @@ As specified in the spec, CoAP over QUIC simplifies several aspects:
 - ✅ Token-based request/response matching
 - ✅ TLS 1.3 encryption (built into QUIC)
 - ✅ Concurrent request handling
+- ✅ **Performance benchmarking framework** - [Automated latency and throughput testing](../benchmark/README.md)
 
 ### Future Enhancements
 The spec defines additional features that could be implemented:
@@ -350,10 +351,9 @@ The spec defines additional features that could be implemented:
 - **Unidirectional streams** for NON messages (Section 5.3) - alternative to datagrams
 - **Block-wise transfers** (RFC 7959) - leveraging QUIC stream reliability
 - **Observe** pattern (RFC 7641) - for pub/sub and real-time updates
-- **Connection migration** - for mobile devices changing networks
-- **0-RTT connection resumption** - for ultra-low latency reconnects
+- **Connection migration** - for mobile devices changing networks (IN PROGRESS)
+- **0-RTT connection resumption** - for ultra-low latency reconnects (IN PROGRESS)
 - **DTLS for UDP** - encrypted UDP baseline for fair comparison
-- **Performance benchmarking framework** - automated latency and throughput testing
 
 ## References
 
