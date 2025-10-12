@@ -4,11 +4,19 @@ This is a basic implementation demonstrating the core concepts of the CoAP over 
 
 ## Overview
 
-This PoC implements a simple CoAP over QUIC client and server using:
+This PoC provides multiple implementations to demonstrate and compare CoAP transport options:
+
+### CoAP over QUIC (Primary Focus)
 - **QUIC transport**: Using [quic-go](https://github.com/quic-go/quic-go) for QUIC protocol support
 - **TLS 1.3 encryption**: Built into QUIC (no separate DTLS needed)
-- **Bidirectional streams**: For CoAP request/response pairs
-- **CoAP messaging**: RFC 7252 compliant message format
+- **Bidirectional streams**: For reliable CoAP request/response pairs
+- **QUIC Datagrams (RFC 9221)**: For unreliable NON messages
+- **CoAP messaging**: RFC 7252 compliant message format using [go-coap](https://github.com/plgd-dev/go-coap)
+
+### CoAP over UDP (Baseline Comparison)
+- **Native UDP transport**: Using go-coap's built-in UDP support
+- **Standard CoAP**: RFC 7252 with CON/NON messages, retransmission, deduplication
+- **Optional DTLS**: Can be added for encrypted comparison (not implemented yet)
 
 ## Key Spec Features Demonstrated
 
@@ -51,18 +59,26 @@ This PoC implements a simple CoAP over QUIC client and server using:
 
 ```
 examples/poc/
-├── README.md           # This file
-├── go.mod              # Go module definition
-├── certs/              # TLS certificates
-│   ├── generate.sh     # Certificate generation script
-│   ├── server.crt      # Server certificate
-│   └── server.key      # Server private key
-├── common/             # Shared CoAP utilities
-│   └── coap.go         # CoAP message encoding/decoding
-├── server/             # Server implementation
-│   └── main.go         # CoAP/QUIC server
-└── client/             # Client implementation
-    └── main.go         # CoAP/QUIC client
+├── README.md              # This file
+├── go.mod                 # Go module definition
+├── certs/                 # TLS certificates (for QUIC)
+│   ├── generate.sh        # Certificate generation script
+│   ├── server.crt         # Server certificate
+│   └── server.key         # Server private key
+├── common/                # Shared CoAP utilities
+│   └── coap.go            # CoAP message helpers (wraps go-coap)
+├── server/                # CoAP/QUIC server (streams only)
+│   └── main.go
+├── client/                # CoAP/QUIC client (streams only)
+│   └── main.go
+├── server-datagram/       # CoAP/QUIC server (streams + RFC 9221 datagrams)
+│   └── main.go
+├── client-datagram/       # CoAP/QUIC client (streams + RFC 9221 datagrams)
+│   └── main.go
+├── udp-server/            # CoAP/UDP server (baseline comparison)
+│   └── main.go
+└── udp-client/            # CoAP/UDP client (baseline comparison)
+    └── main.go
 ```
 
 ## Prerequisites
@@ -89,82 +105,179 @@ examples/poc/
    cd ..
    ```
 
-## Running the Demo
+## Running the Demos
 
-### Terminal 1: Start the Server
+This PoC includes three implementations that can be run independently:
 
+### 1. CoAP over QUIC (Streams Only)
+
+Basic QUIC implementation using bidirectional streams for all messages.
+
+**Terminal 1: Start the Server**
 ```bash
 cd server
 go run main.go
 ```
 
-Expected output:
-```
-Starting CoAP over QUIC Server...
-Listening on port 5683 (coaps+quic://localhost:5683)
-Server ready. Waiting for connections...
-```
-
-### Terminal 2: Run the Client
-
+**Terminal 2: Run the Client**
 ```bash
 cd client
 go run main.go
 ```
 
-The client will run through 5 demos:
+The client runs 5 demos with stream-based requests.
 
-1. **Resource Discovery**: GET `/.well-known/core`
-2. **Temperature Reading**: GET `/temp`
-3. **LED State Query**: GET `/led`
-4. **LED Toggle**: PUT `/led`
-5. **Concurrent Requests**: Multiple simultaneous requests on different streams
+---
+
+### 2. CoAP over QUIC with Datagrams (RFC 9221)
+
+Full QUIC implementation with both streams (reliable) and datagrams (unreliable).
+
+**Terminal 1: Start the Server**
+```bash
+cd server-datagram
+go run main.go
+```
+
+**Terminal 2: Run the Client**
+```bash
+cd client-datagram
+go run main.go
+```
+
+The client runs 8 demos including:
+1. Resource Discovery (stream)
+2. Temperature Reading (stream)
+3. Telemetry via Datagram (NON)
+4. Log via Datagram (NON)
+5. Rapid Sensor Burst (10 datagrams)
+6. LED State Query (stream)
+7. LED Toggle (stream)
+8. Mixed Streams and Datagrams
+
+---
+
+### 3. CoAP over UDP (Baseline)
+
+Standard CoAP over UDP for performance comparison.
+
+**Terminal 1: Start the Server**
+```bash
+cd udp-server
+go run main.go
+```
+
+**Terminal 2: Run the Client**
+```bash
+cd udp-client
+go run main.go
+```
+
+The client runs 8 demos using CON (confirmable) and NON (non-confirmable) messages:
+1. Resource Discovery (CON)
+2. Temperature Reading (CON)
+3. Telemetry via NON message
+4. Log via NON message
+5. Rapid Sensor Burst (10 NON messages)
+6. LED State Query (CON)
+7. LED Toggle (CON)
+8. Mixed CON and NON Messages
+
+**Note**: All three implementations use the same port (5683), so only run one server at a time.
 
 ## Server Endpoints
 
-The server implements the following CoAP resources:
+All server implementations expose the following CoAP resources:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/.well-known/core` | GET | Resource discovery (returns available resources) |
-| `/temp` | GET | Returns simulated temperature reading in JSON |
-| `/led` | GET | Returns current LED state |
-| `/led` | PUT | Toggles LED state and returns new state |
+| Endpoint | Method | Description | Transport Support |
+|----------|--------|-------------|-------------------|
+| `/.well-known/core` | GET | Resource discovery (returns available resources) | All |
+| `/temp` | GET | Returns simulated temperature reading in JSON | All |
+| `/led` | GET | Returns current LED state | All |
+| `/led` | PUT | Toggles LED state and returns new state | All |
+| `/telemetry` | POST | Accepts telemetry data (fire-and-forget) | All |
+| `/log` | POST | Accepts log messages (fire-and-forget) | All |
 
 ## Example Output
 
-### Server Side:
+### CoAP/QUIC with Datagrams (server-datagram)
+
+**Server Side:**
 ```
-Starting CoAP over QUIC Server...
+Starting CoAP over QUIC Server with Datagram Support (RFC 9221)...
 Listening on port 5683 (coaps+quic://localhost:5683)
 Server ready. Waiting for connections...
+Supports:
+  - Bidirectional streams (reliable request/response)
+  - QUIC Datagrams (unreliable NON messages, RFC 9221)
 New connection from 127.0.0.1:xxxxx
 New bidirectional stream 0 opened
-Received 23 bytes on stream 0
-CoAP Request: Type=0, Code=0.01, Token=a1b2c3d4, MsgID=0
+[STREAM 0] Received 25 bytes
+[STREAM 0] CoAP Request: Type=0, Code=0.01, Token=a1b2c3d4
 Request path: /.well-known/core
-Serving resource discovery
-Sent CoAP Response: Code=2.05, 67 bytes
+[STREAM 0] Sent CoAP Response: Code=2.05, 67 bytes
+[DATAGRAM] Received 75 bytes
+[DATAGRAM] CoAP NON: Type=1, Code=0.02, Token=xyz123
+[DATAGRAM] Request path: /telemetry
+[DATAGRAM] Telemetry data received (fire-and-forget)
 ```
 
-### Client Side:
+**Client Side:**
 ```
-CoAP over QUIC Client Starting...
+CoAP over QUIC Client with Datagram Support (RFC 9221)...
 Connecting to coaps+quic://localhost:5683
 Connected to 127.0.0.1:5683
+Supports:
+  - Bidirectional streams (reliable CON messages)
+  - QUIC Datagrams (unreliable NON messages, RFC 9221)
 
-=== Demo 1: Resource Discovery ===
-  -> Stream 0: Sending GET /.well-known/core (23 bytes)
+=== Demo 1: Resource Discovery (Stream) ===
+  -> Stream 0: Sending GET /.well-known/core (25 bytes)
   <- Stream 0: Received 67 bytes
   Response Code: 2.05
   Available Resources:
-    </temp>;rt="temperature",</led>;rt="actuator"
+    </temp>;rt="temperature",</led>;rt="actuator",</telemetry>;rt="telemetry",</log>;rt="log"
 
-=== Demo 2: Get Temperature ===
-  -> Stream 4: Sending GET /temp (18 bytes)
-  <- Stream 4: Received 51 bytes
-  Response Code: 2.05
-  Temperature: {"value":24.37,"unit":"celsius"}
+=== Demo 3: Send Telemetry via Datagram (NON) ===
+  -> Datagram: Sending POST /telemetry (75 bytes)
+  <- Datagram sent (no response expected)
+```
+
+### CoAP/UDP Baseline
+
+**Server Side:**
+```
+Starting CoAP over UDP Server (RFC 7252)...
+Listening on port 5683 (coap://localhost:5683)
+Server ready. Waiting for requests...
+Supports:
+  - CON (confirmable) messages with ACK
+  - NON (non-confirmable) messages
+  - Retransmission and deduplication
+[CON] GET /.well-known/core from 127.0.0.1:xxxxx
+  -> Serving resource discovery
+[NON] POST /telemetry from 127.0.0.1:xxxxx
+  -> Telemetry data received (60 bytes)
+```
+
+**Client Side:**
+```
+CoAP over UDP Client (RFC 7252)...
+Connecting to coap://localhost:5683
+Connected to 127.0.0.1:5683
+Supports:
+  - CON (confirmable) messages with retransmission
+  - NON (non-confirmable) messages
+
+=== Demo 1: Resource Discovery (CON) ===
+  -> Sending CON GET /.well-known/core
+  <- Response Code: 2.05
+  Available Resources:
+    </temp>;rt="temperature",</led>;rt="actuator",</telemetry>;rt="telemetry",</log>;rt="log"
+
+=== Demo 3: Send Telemetry (NON) ===
+  -> Sending NON POST /telemetry
+  <- NON message sent (no response expected)
 ```
 
 ## Implementation Details
@@ -195,25 +308,52 @@ The implementation uses the standard CoAP message format from RFC 7252:
 - **Max Idle Timeout**: 30 seconds
 - **Keep-Alive Period**: 10 seconds
 
-## Differences from CoAP over UDP
+## Key Differences: CoAP/QUIC vs CoAP/UDP
 
-As specified in the spec, several CoAP/UDP features are not needed:
+As specified in the spec, CoAP over QUIC simplifies several aspects:
 
-1. **No ACK messages**: QUIC provides reliable delivery
-2. **No retransmission**: QUIC handles packet loss
-3. **No deduplication**: QUIC ensures exactly-once delivery
+### CoAP over QUIC (Streams)
+1. **No ACK messages**: QUIC streams provide reliable delivery
+2. **No retransmission logic**: QUIC handles packet loss automatically
+3. **No deduplication**: QUIC ensures exactly-once delivery per stream
 4. **No multicast**: QUIC is unicast only
-5. **Simplified congestion control**: QUIC provides advanced congestion control
+5. **Advanced congestion control**: Built into QUIC
 
-## Future Enhancements
+### CoAP over QUIC (Datagrams - RFC 9221)
+- **Similar to UDP**: Unreliable, unordered delivery (like NON messages)
+- **Encrypted**: Unlike plain UDP, datagrams are still encrypted via QUIC
+- **Connection context**: Datagrams tied to existing QUIC connection
+- **No head-of-line blocking**: Unlike QUIC streams
 
-This PoC demonstrates basic functionality. The spec defines additional features:
+### CoAP over UDP (Traditional)
+- **CON messages**: Require explicit ACK and retransmission
+- **NON messages**: Fire-and-forget, no reliability guarantees
+- **Message deduplication**: Required to handle retransmissions
+- **Optional DTLS**: Adds overhead and complexity for encryption
 
-- **Unidirectional streams** for NON messages (Section 5.3)
-- **QUIC Datagrams** for unreliable transport (RFC 9221)
-- **Block-wise transfers** leveraging QUIC stream reliability
-- **Observe** pattern for pub/sub (RFC 7641)
-- **Connection migration** for mobile devices
+## Implementation Status
+
+### Completed Features
+- ✅ CoAP over QUIC with bidirectional streams (Section 3.1)
+- ✅ QUIC Datagrams for NON messages (RFC 9221)
+- ✅ CoAP over UDP baseline for comparison
+- ✅ Resource discovery (/.well-known/core)
+- ✅ GET/PUT/POST methods
+- ✅ CON and NON message types
+- ✅ Token-based request/response matching
+- ✅ TLS 1.3 encryption (built into QUIC)
+- ✅ Concurrent request handling
+
+### Future Enhancements
+The spec defines additional features that could be implemented:
+
+- **Unidirectional streams** for NON messages (Section 5.3) - alternative to datagrams
+- **Block-wise transfers** (RFC 7959) - leveraging QUIC stream reliability
+- **Observe** pattern (RFC 7641) - for pub/sub and real-time updates
+- **Connection migration** - for mobile devices changing networks
+- **0-RTT connection resumption** - for ultra-low latency reconnects
+- **DTLS for UDP** - encrypted UDP baseline for fair comparison
+- **Performance benchmarking framework** - automated latency and throughput testing
 
 ## References
 
