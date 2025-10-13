@@ -69,6 +69,7 @@ var (
 	AppLinkFormat = message.AppLinkFormat
 	AppJSON       = message.AppJSON
 	AppCBOR       = message.AppCBOR
+	AppOctets     = message.AppOctets
 )
 
 // NewMessage creates a new CoAP message using go-coap
