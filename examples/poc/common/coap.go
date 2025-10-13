@@ -61,6 +61,7 @@ const (
 	URIQuery      = message.URIQuery
 	ContentFormat = message.ContentFormat
 	Accept        = message.Accept
+	Observe       = message.Observe // RFC 7641 - option 6
 )
 
 // Content formats (MediaType values)
@@ -150,6 +151,50 @@ func MethodToString(code codes.Code) string {
 	default:
 		return fmt.Sprintf("0x%02x", code)
 	}
+}
+
+// AddObserveOption adds the Observe option to a message (RFC 7641)
+// value: 0 for registration, 1 for deregistration
+func AddObserveOption(msg *message.Message, value uint32) {
+	msg.Options = append(msg.Options, message.Option{
+		ID:    message.Observe,
+		Value: encodeUint32(value),
+	})
+}
+
+// GetObserveOption extracts the Observe option value from a message
+// Returns (value, true) if present, (0, false) if not present
+func GetObserveOption(msg *message.Message) (uint32, bool) {
+	val, err := msg.Options.GetUint32(message.Observe)
+	if err != nil {
+		return 0, false
+	}
+	return val, true
+}
+
+// HasObserveOption checks if a message has the Observe option
+func HasObserveOption(msg *message.Message) bool {
+	_, ok := GetObserveOption(msg)
+	return ok
+}
+
+// encodeUint32 encodes a uint32 value for CoAP options
+func encodeUint32(value uint32) []byte {
+	if value == 0 {
+		return []byte{}
+	}
+	buf := make([]byte, 4)
+	i := 0
+	for value > 0 {
+		buf[i] = byte(value)
+		value >>= 8
+		i++
+	}
+	// Reverse for big-endian
+	for j := 0; j < i/2; j++ {
+		buf[j], buf[i-1-j] = buf[i-1-j], buf[j]
+	}
+	return buf[:i]
 }
 
 // MethodFromString converts a method string to a CoAP code
