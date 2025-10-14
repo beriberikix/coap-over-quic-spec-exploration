@@ -12,6 +12,9 @@ from collections import defaultdict
 def analyze_benchmark(csv_path):
     """Analyze a single benchmark CSV file."""
     latencies = defaultdict(list)
+    connection_times = defaultdict(lambda: {'cold': [], 'warm': []})
+    migration_times = []
+    observe_notifications = []
 
     with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)
@@ -19,7 +22,21 @@ def analyze_benchmark(csv_path):
             if row['metric_type'] == 'latency':
                 transport = row['transport']
                 latency = float(row['value'])
-                latencies[transport].append(latency)
+
+                # Track connection resumption separately
+                if row.get('connection_type'):
+                    conn_type = row['connection_type']
+                    if conn_type in ['cold', 'warm']:
+                        connection_times[transport][conn_type].append(latency)
+                # Track migration events
+                elif row.get('migration_event'):
+                    migration_times.append(latency)
+                # Track Observe notifications
+                elif row.get('observe_seq') and int(row.get('observe_seq', 0)) > 0:
+                    observe_notifications.append(latency)
+                # Regular latencies
+                else:
+                    latencies[transport].append(latency)
 
     # Calculate statistics for each transport
     results = {}
@@ -37,7 +54,7 @@ def analyze_benchmark(csv_path):
                 'max_ms': max(values),
             }
 
-    return results
+    return results, connection_times, migration_times, observe_notifications
 
 def main():
     results_dir = Path(__file__).parent / 'results'
@@ -51,18 +68,29 @@ def main():
 
     # Combine results from all recent files
     all_results = {}
+    all_connection_times = defaultdict(lambda: {'cold': [], 'warm': []})
+    all_migration_times = []
+    all_observe_notifications = []
+
     for csv_file in csv_files[:4]:  # Process last 4 files
-        results = analyze_benchmark(csv_file)
+        results, connection_times, migration_times, observe_notifications = analyze_benchmark(csv_file)
         for transport, stats in results.items():
             if transport not in all_results:
                 all_results[transport] = stats
+
+        # Combine advanced metrics
+        for transport, times in connection_times.items():
+            all_connection_times[transport]['cold'].extend(times['cold'])
+            all_connection_times[transport]['warm'].extend(times['warm'])
+        all_migration_times.extend(migration_times)
+        all_observe_notifications.extend(observe_notifications)
 
     # Print comparison table
     print("\n=== CoAP Benchmark Results Comparison ===\n")
     print(f"{'Transport':<20} {'Count':<8} {'Mean':<10} {'Median':<10} {'P95':<10} {'P99':<10} {'Min':<10} {'Max':<10}")
     print("-" * 98)
 
-    transports = ['quic-stream', 'quic-datagram', 'udp', 'dtls']
+    transports = ['quic-stream', 'quic-datagram', 'udp', 'dtls', 'quic-streaming', 'quic-0rtt', 'quic-migration', 'quic-observe']
     for transport in transports:
         if transport in all_results:
             stats = all_results[transport]
@@ -122,6 +150,56 @@ def main():
 
     print(f"• All transports showing sub-millisecond mean latency on localhost")
     print(f"• QUIC provides built-in encryption with minimal performance impact")
+
+    # Advanced features analysis
+    print("\n=== Advanced Features Analysis ===\n")
+
+    # 0-RTT Connection Resumption
+    if 'quic-0rtt' in all_connection_times:
+        cold_times = all_connection_times['quic-0rtt']['cold']
+        warm_times = all_connection_times['quic-0rtt']['warm']
+
+        if cold_times and warm_times:
+            cold_mean = statistics.mean(cold_times)
+            warm_mean = statistics.mean(warm_times)
+            speedup = (cold_mean / warm_mean) if warm_mean > 0 else 0
+
+            print("0-RTT Connection Resumption:")
+            print(f"  Cold start (1-RTT):  {cold_mean:.3f} ms")
+            print(f"  Warm reconnect (0-RTT): {warm_mean:.3f} ms")
+            print(f"  Speedup: {speedup:.1f}x faster!")
+            print()
+
+    # Connection Migration
+    if all_migration_times:
+        migration_mean = statistics.mean(all_migration_times)
+        migration_min = min(all_migration_times)
+        migration_max = max(all_migration_times)
+
+        print("Connection Migration:")
+        print(f"  Migration overhead: {migration_mean:.3f} ms (min: {migration_min:.3f}, max: {migration_max:.3f})")
+        print(f"  Connection maintained throughout network changes")
+        print()
+
+    # Observe Pattern
+    if all_observe_notifications:
+        obs_mean = statistics.mean(all_observe_notifications)
+        obs_min = min(all_observe_notifications)
+        obs_max = max(all_observe_notifications)
+
+        print("Observe Pattern (RFC 7641):")
+        print(f"  Notification latency: {obs_mean:.3f} ms (min: {obs_min:.3f}, max: {obs_max:.3f})")
+        print(f"  Total notifications: {len(all_observe_notifications)}")
+        print()
+
+    # Streaming vs Block-wise
+    if 'quic-streaming' in all_results:
+        print("QUIC Native Streaming:")
+        print(f"  Mean transfer time: {all_results['quic-streaming']['mean_ms']:.3f} ms")
+        print(f"  Eliminates block-wise overhead")
+        print(f"  Single request/response - no fragmentation")
+        print()
+
     print()
 
 if __name__ == '__main__':

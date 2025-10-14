@@ -37,6 +37,28 @@ type TransportClient interface {
 	SendNON(ctx context.Context, method, path string, payload []byte) (int, time.Duration, error)
 }
 
+// AdvancedTransportClient extends TransportClient with advanced features
+// Not all transports need to implement these - they can return ErrNotSupported
+type AdvancedTransportClient interface {
+	TransportClient
+
+	// TestConnectionResumption tests 0-RTT connection resumption
+	// Returns (cold connection duration, warm connection duration, error)
+	TestConnectionResumption(addr string) (time.Duration, time.Duration, error)
+
+	// TestMigration tests connection migration
+	// Returns (migration overhead duration, error)
+	TestMigration() (time.Duration, error)
+
+	// SubscribeObserve subscribes to an Observe resource
+	// Returns (initial response time, error)
+	SubscribeObserve(ctx context.Context, path string) (time.Duration, error)
+
+	// WaitForNotifications waits for Observe notifications and returns their timings
+	// Returns (notification timings array, error)
+	WaitForNotifications(ctx context.Context, count int) ([]time.Duration, error)
+}
+
 // BenchmarkRunner runs benchmark scenarios
 type BenchmarkRunner struct {
 	collector *MetricsCollector
@@ -259,6 +281,51 @@ var (
 		Path:        "/telemetry",
 		IsNON:       true,
 	}
+
+	// Streaming scenarios (for QUIC streaming comparison)
+	StreamingSmallPayload = TestScenario{
+		Name:        "Streaming 1KB Transfer",
+		Description: "Tests streaming transfer for small payloads",
+		PayloadSize: 1024, // 1KB
+		Count:       50,
+		Concurrent:  1,
+		Method:      "GET",
+		Path:        "/firmware",
+		IsNON:       false,
+	}
+
+	StreamingMediumPayload = TestScenario{
+		Name:        "Streaming 10KB Transfer",
+		Description: "Tests streaming transfer for medium payloads",
+		PayloadSize: 10240, // 10KB
+		Count:       30,
+		Concurrent:  1,
+		Method:      "GET",
+		Path:        "/firmware",
+		IsNON:       false,
+	}
+
+	StreamingLargePayload = TestScenario{
+		Name:        "Streaming 50KB Transfer",
+		Description: "Tests streaming transfer for large payloads",
+		PayloadSize: 51200, // 50KB
+		Count:       20,
+		Concurrent:  1,
+		Method:      "GET",
+		Path:        "/firmware",
+		IsNON:       false,
+	}
+
+	StreamingVeryLargePayload = TestScenario{
+		Name:        "Streaming 100KB Transfer",
+		Description: "Tests streaming transfer for very large payloads",
+		PayloadSize: 102400, // 100KB
+		Count:       10,
+		Concurrent:  1,
+		Method:      "GET",
+		Path:        "/firmware",
+		IsNON:       false,
+	}
 )
 
 // DefaultScenarios returns a standard set of test scenarios
@@ -271,5 +338,15 @@ func DefaultScenarios() []TestScenario {
 		LargePayloadPOST,
 		VeryLargePayloadPOST,
 		BurstSmallPayload,
+	}
+}
+
+// StreamingScenarios returns scenarios for testing streaming transfers
+func StreamingScenarios() []TestScenario {
+	return []TestScenario{
+		StreamingSmallPayload,
+		StreamingMediumPayload,
+		StreamingLargePayload,
+		StreamingVeryLargePayload,
 	}
 }

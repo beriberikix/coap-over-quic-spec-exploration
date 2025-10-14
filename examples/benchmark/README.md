@@ -1,10 +1,20 @@
 # CoAP Transport Benchmark Tool
 
-This tool provides comprehensive performance benchmarking for CoAP over different transport protocols:
-- **CoAP/QUIC Streams** - Reliable bidirectional streams with TLS 1.3
-- **CoAP/QUIC Datagrams** - Hybrid reliable/unreliable (RFC 9221) with TLS 1.3
-- **CoAP/UDP** - Traditional CoAP baseline (unencrypted)
-- **CoAP/DTLS** - CoAP over UDP with DTLS 1.2 encryption (encrypted baseline)
+This tool provides comprehensive performance benchmarking for CoAP over different transport protocols.
+
+## Transport Types
+
+### Basic Transports
+- **CoAP/QUIC Streams** (`quic-stream`) - Reliable bidirectional streams with TLS 1.3
+- **CoAP/QUIC Datagrams** (`quic-datagram`) - Hybrid reliable/unreliable (RFC 9221) with TLS 1.3
+- **CoAP/UDP** (`udp`) - Traditional CoAP baseline (unencrypted)
+- **CoAP/DTLS** (`dtls`) - CoAP over UDP with DTLS 1.2 encryption (encrypted baseline)
+
+### Advanced Transports
+- **QUIC Streaming** (`quic-streaming`) - Native QUIC streaming vs traditional block-wise transfers
+- **QUIC 0-RTT** (`quic-0rtt`) - Connection resumption and 0-RTT performance testing
+- **QUIC Migration** (`quic-migration`) - Connection migration and network handoff testing
+- **QUIC Observe** (`quic-observe`) - RFC 7641 Observe pattern over long-lived streams
 
 ## Features
 
@@ -13,28 +23,32 @@ This tool provides comprehensive performance benchmarking for CoAP over differen
 - **Multiple Payload Sizes**: Small (sensor telemetry), medium (config), large (OTA)
 - **Request Types**: GET, POST, PUT with both CON and NON messages
 - **Concurrent Testing**: Sequential and concurrent request patterns
+- **Advanced Metrics**: Connection resumption, migration overhead, observe notifications, streaming efficiency
 - **CSV Export**: Detailed metrics for further analysis
+- **Python Analysis**: Automated comparison and insights generation
 
 ## Quick Start
 
 ### 1. Start a Server
 
-Choose one of the four server implementations:
+**Recommended**: Use `server-datagram` for all QUIC-based transports:
 
 ```bash
-# CoAP/QUIC with datagrams (recommended for full feature testing)
+# Start the server (supports all QUIC transports)
 cd ../poc/server-datagram
 go run main.go
+```
 
-# Or CoAP/QUIC with streams only
-cd ../poc/server
-go run main.go
+This server works with: `quic-stream`, `quic-datagram`, `quic-streaming`, `quic-0rtt`, `quic-migration`, `quic-observe`
 
-# Or CoAP/UDP baseline (unencrypted)
+**Alternative servers**:
+
+```bash
+# For UDP baseline
 cd ../poc/udp-server
 go run main.go
 
-# Or CoAP/DTLS baseline (encrypted UDP for fair comparison)
+# For DTLS baseline
 cd ../poc/udp-server-dtls
 go run main.go
 ```
@@ -47,15 +61,21 @@ go run main.go
 # Build the benchmark tool
 go build
 
-# Test each transport (each requires its corresponding server)
+# Basic transports
 ./benchmark -transport quic-stream -server localhost:5683
 ./benchmark -transport quic-datagram -server localhost:5683
 ./benchmark -transport udp -server localhost:5683
 ./benchmark -transport dtls -server localhost:5683
+
+# Advanced transports
+./benchmark -transport quic-streaming -server localhost:5683
+./benchmark -transport quic-0rtt -server localhost:5683
+./benchmark -transport quic-migration -server localhost:5683
+./benchmark -transport quic-observe -server localhost:5683
 ```
 
 **Transport → Server Mapping**:
-- `quic-stream` or `quic-datagram` → Use `server-datagram` or `server`
+- All `quic-*` transports → Use `server-datagram` (recommended)
 - `udp` → Use `udp-server`
 - `dtls` → Use `udp-server-dtls`
 
@@ -63,7 +83,9 @@ go build
 
 ```
 -transport string (required)
-    Transport to test: quic-stream, quic-datagram, udp, or dtls
+    Transport to test (run without this flag to see all options)
+    Basic: quic-stream, quic-datagram, udp, dtls
+    Advanced: quic-streaming, quic-0rtt, quic-migration, quic-observe
 
 -server string
     Server address (default "localhost:5683")
@@ -120,6 +142,61 @@ The benchmark runs the following scenarios for each transport:
 - **Purpose**: Simulates rapid sensor bursts
 - **Type**: NON (unreliable)
 
+## Advanced Transport Features
+
+### QUIC Streaming (`quic-streaming`)
+Tests QUIC's native streaming capabilities for large file transfers, comparing against traditional CoAP block-wise transfers (RFC 7959).
+
+**Streaming Scenarios**:
+- 1KB Transfer (50 requests)
+- 10KB Transfer (30 requests)
+- 50KB Transfer (20 requests)
+- 100KB Transfer (10 requests)
+
+**Expected Results**: QUIC streaming should be **~7x faster** than block-wise transfers due to:
+- Single request/response (no fragmentation)
+- No block negotiation overhead
+- Native flow control and congestion management
+
+### QUIC 0-RTT (`quic-0rtt`)
+Tests 0-RTT connection resumption performance, comparing cold start (1-RTT) against warm reconnect (0-RTT).
+
+**What it measures**:
+- Cold connection time (initial 1-RTT handshake)
+- Warm connection time (0-RTT resumption with cached session)
+- Speedup factor
+
+**Expected Results**: 0-RTT should be **~3x faster** than cold start for:
+- Device wake-from-sleep scenarios
+- Frequent reconnection patterns
+- Battery-constrained IoT devices
+
+### QUIC Migration (`quic-migration`)
+Tests connection migration capabilities, simulating network handoff (e.g., WiFi → Cellular).
+
+**What it measures**:
+- Migration overhead (time to establish new path)
+- Connection continuity (verify no packet loss)
+- Seamless failover
+
+**Expected Results**:
+- Minimal migration overhead (<5ms)
+- Zero packet loss during migration
+- Connection survives network changes
+
+### QUIC Observe (`quic-observe`)
+Tests RFC 7641 Observe pattern over long-lived QUIC streams for push notifications.
+
+**What it measures**:
+- Initial subscription latency
+- Notification delivery timing
+- Stream overhead vs traditional CON/ACK
+
+**Expected Results**:
+- Lower overhead than traditional polling
+- Real-time push notifications
+- Single long-lived connection maintained
+
 ## Output
 
 ### Console Output
@@ -161,18 +238,54 @@ Detailed metrics are exported to `results/benchmark-YYYYMMDD-HHMMSS.csv`:
 | Column | Description |
 |--------|-------------|
 | timestamp | ISO 8601 timestamp |
-| transport | quic-stream, quic-datagram, or udp |
-| operation | GET, POST, PUT |
+| transport | Transport type (quic-stream, quic-datagram, udp, dtls, quic-streaming, quic-0rtt, quic-migration, quic-observe) |
+| operation | GET, POST, PUT, CONNECT, MIGRATE, OBSERVE |
 | path | Resource path |
 | metric_type | latency or bytes |
 | value | Measurement value (ms for latency, bytes for bytes) |
 | payload_size | Size of request payload |
 | success | true/false |
 | error | Error message if failed |
+| connection_type | "cold", "warm", or "" (for 0-RTT testing) |
+| migration_event | "before", "during", "after", or "" (for migration testing) |
+| observe_seq | Observation sequence number (0 for non-observe) |
+| transfer_method | "stream", "blockwise", or "" (for streaming comparison) |
 
-## Analysis Tips
+## Analyzing Results
 
-### Comparing Transports
+### Python Analysis Script
+
+The included `analyze_results.py` script automatically analyzes benchmark results:
+
+```bash
+python3 analyze_results.py
+```
+
+**Output includes**:
+- Latency comparison table across all transports
+- Performance vs UDP baseline
+- Encrypted transport comparison (QUIC vs DTLS)
+- 0-RTT connection resumption speedup
+- Connection migration overhead
+- Observe notification timing
+- Streaming vs block-wise efficiency
+
+**Example output**:
+```
+=== Advanced Features Analysis ===
+
+0-RTT Connection Resumption:
+  Cold start (1-RTT):  10.234 ms
+  Warm reconnect (0-RTT): 3.456 ms
+  Speedup: 3.0x faster!
+
+QUIC Native Streaming:
+  Mean transfer time: 7.123 ms
+  Eliminates block-wise overhead
+  Single request/response - no fragmentation
+```
+
+### Manual Analysis
 
 1. **Latency Comparison**:
    ```bash
@@ -180,12 +293,18 @@ Detailed metrics are exported to `results/benchmark-YYYYMMDD-HHMMSS.csv`:
    grep "latency" results/benchmark-*.csv | grep "GET"
    ```
 
-2. **Protocol Overhead**:
+2. **0-RTT Analysis**:
+   ```bash
+   # Compare cold vs warm connection times
+   grep "connection_type" results/benchmark-*.csv
+   ```
+
+3. **Protocol Overhead**:
    - Compare `Total bytes` vs `payload_size` × `count`
    - UDP typically has lowest overhead for small payloads
    - QUIC has higher initial overhead but better for large payloads
 
-3. **Reliability vs Speed**:
+4. **Reliability vs Speed**:
    - Compare CON (reliable) vs NON (unreliable) for same payload
    - QUIC datagrams provide encryption without reliability overhead
 
@@ -247,11 +366,15 @@ CustomScenario := TestScenario{
 
 - [ ] Integrate with tcpdump/pcap for actual byte counting
 - [ ] Add packet loss scenarios using netem
-- [ ] Support for 0-RTT connection resumption testing
-- [ ] Connection migration testing for QUIC
-- [ ] DTLS support for encrypted UDP baseline
+- [x] Support for 0-RTT connection resumption testing (✅ Completed)
+- [x] Connection migration testing for QUIC (✅ Completed)
+- [x] Observe pattern testing for QUIC (✅ Completed)
+- [x] Streaming vs block-wise comparison (✅ Completed)
+- [x] DTLS support for encrypted UDP baseline (✅ Completed)
+- [x] Python analysis script (✅ Completed)
 - [ ] Prometheus metrics export
 - [ ] Real-time charts and visualization
+- [ ] DTLS session resumption comparison
 
 ## Troubleshooting
 

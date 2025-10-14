@@ -16,14 +16,24 @@ func main() {
 	// Command-line flags
 	serverAddr := flag.String("server", "localhost:5683", "Server address")
 	outputDir := flag.String("output", "./results", "Output directory for results")
-	transport := flag.String("transport", "", "Transport to test: quic-stream, quic-datagram, udp, or dtls (required)")
+	transport := flag.String("transport", "", "Transport to test (required)")
 	flag.Parse()
 
 	// Validate transport flag
 	if *transport == "" {
 		log.Println("Error: -transport flag is required")
 		log.Println("Usage: ./benchmark -transport <type> [-server <addr>] [-output <dir>]")
-		log.Println("Transport types: quic-stream, quic-datagram, udp, dtls")
+		log.Println("\nAvailable transports:")
+		log.Println("  Basic transports:")
+		log.Println("    quic-stream      - CoAP over QUIC with bidirectional streams")
+		log.Println("    quic-datagram    - CoAP over QUIC with streams + datagrams (RFC 9221)")
+		log.Println("    udp              - Traditional CoAP over UDP")
+		log.Println("    dtls             - CoAP over UDP with DTLS 1.2")
+		log.Println("  Advanced transports:")
+		log.Println("    quic-streaming   - QUIC native streaming (vs block-wise)")
+		log.Println("    quic-0rtt        - 0-RTT connection resumption testing")
+		log.Println("    quic-migration   - Connection migration testing")
+		log.Println("    quic-observe     - Observe pattern (RFC 7641) testing")
 		os.Exit(1)
 	}
 
@@ -40,9 +50,6 @@ func main() {
 	// Create benchmark runner
 	runner := harness.NewBenchmarkRunner(*serverAddr)
 
-	// Get test scenarios
-	scenarios := harness.DefaultScenarios()
-
 	// Select transport client
 	var client harness.TransportClient
 	switch *transport {
@@ -54,8 +61,24 @@ func main() {
 		client = transports.NewUDPClient()
 	case "dtls":
 		client = transports.NewDTLSClient()
+	case "quic-streaming":
+		client = transports.NewQUICStreamingClient()
+	case "quic-0rtt":
+		client = transports.NewQUIC0RTTClient()
+	case "quic-migration":
+		client = transports.NewQUICMigrationClient()
+	case "quic-observe":
+		client = transports.NewQUICObserveClient()
 	default:
-		log.Fatalf("Unknown transport: %s (valid options: quic-stream, quic-datagram, udp, dtls)", *transport)
+		log.Fatalf("Unknown transport: %s (run without -transport to see options)", *transport)
+	}
+
+	// Select appropriate scenarios based on transport
+	var scenarios []harness.TestScenario
+	if *transport == "quic-streaming" {
+		scenarios = harness.StreamingScenarios()
+	} else {
+		scenarios = harness.DefaultScenarios()
 	}
 
 	// Run benchmarks

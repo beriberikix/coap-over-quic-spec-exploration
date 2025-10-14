@@ -19,15 +19,19 @@ const (
 
 // Metric represents a single measurement
 type Metric struct {
-	Timestamp   time.Time
-	Transport   string // "quic-stream", "quic-datagram", "udp"
-	Operation   string // "GET", "POST", "PUT"
-	Path        string
-	Type        MetricType
-	Value       float64 // milliseconds for latency, bytes for bytes
-	PayloadSize int
-	Success     bool
-	Error       string
+	Timestamp      time.Time
+	Transport      string // "quic-stream", "quic-datagram", "udp", "dtls", "quic-0rtt", etc.
+	Operation      string // "GET", "POST", "PUT"
+	Path           string
+	Type           MetricType
+	Value          float64 // milliseconds for latency, bytes for bytes
+	PayloadSize    int
+	Success        bool
+	Error          string
+	ConnectionType string // "cold", "warm", "resumed", "" (for regular connections)
+	MigrationEvent string // "before", "during", "after", "" (for regular requests)
+	ObserveSeq     int    // Observation sequence number (0 for non-observe)
+	TransferMethod string // "stream", "blockwise", "" (for regular requests)
 }
 
 // Stats represents statistical summary of metrics
@@ -141,7 +145,7 @@ func (mc *MetricsCollector) GetStats(transport string, metricType MetricType) St
 func (mc *MetricsCollector) GetAllStats() map[string]map[MetricType]Stats {
 	result := make(map[string]map[MetricType]Stats)
 
-	transports := []string{"quic-stream", "quic-datagram", "udp"}
+	transports := []string{"quic-stream", "quic-datagram", "udp", "dtls", "quic-0rtt", "quic-migration", "quic-observe", "quic-streaming"}
 	metricTypes := []MetricType{LatencyMetric, BytesMetric}
 
 	for _, transport := range transports {
@@ -176,6 +180,10 @@ func (mc *MetricsCollector) ExportCSV(filename string) error {
 		"payload_size",
 		"success",
 		"error",
+		"connection_type",
+		"migration_event",
+		"observe_seq",
+		"transfer_method",
 	}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
@@ -193,6 +201,10 @@ func (mc *MetricsCollector) ExportCSV(filename string) error {
 			fmt.Sprintf("%d", m.PayloadSize),
 			fmt.Sprintf("%t", m.Success),
 			m.Error,
+			m.ConnectionType,
+			m.MigrationEvent,
+			fmt.Sprintf("%d", m.ObserveSeq),
+			m.TransferMethod,
 		}
 		if err := writer.Write(record); err != nil {
 			return fmt.Errorf("failed to write CSV record: %w", err)
@@ -208,7 +220,7 @@ func (mc *MetricsCollector) PrintSummary() {
 
 	allStats := mc.GetAllStats()
 
-	for _, transport := range []string{"quic-stream", "quic-datagram", "udp"} {
+	for _, transport := range []string{"quic-stream", "quic-datagram", "udp", "dtls", "quic-0rtt", "quic-migration", "quic-observe", "quic-streaming"} {
 		stats, ok := allStats[transport]
 		if !ok {
 			continue
@@ -242,6 +254,94 @@ func (mc *MetricsCollector) PrintSummary() {
 		}
 
 		fmt.Println()
+	}
+}
+
+// RecordConnectionTime records connection establishment time (0-RTT testing)
+func (mc *MetricsCollector) RecordConnectionTime(transport, connType string, duration time.Duration, err error) {
+	metric := Metric{
+		Timestamp:      time.Now(),
+		Transport:      transport,
+		Operation:      "CONNECT",
+		Path:           "",
+		Type:           LatencyMetric,
+		Value:          float64(duration.Microseconds()) / 1000.0,
+		Success:        err == nil,
+		ConnectionType: connType, // "cold" or "warm"
+	}
+	if err != nil {
+		metric.Error = err.Error()
+	}
+	mc.Record(metric)
+}
+
+// RecordMigrationEvent records connection migration metrics
+func (mc *MetricsCollector) RecordMigrationEvent(transport, event string, duration time.Duration, err error) {
+	metric := Metric{
+		Timestamp:      time.Now(),
+		Transport:      transport,
+		Operation:      "MIGRATE",
+		Path:           "",
+		Type:           LatencyMetric,
+		Value:          float64(duration.Microseconds()) / 1000.0,
+		Success:        err == nil,
+		MigrationEvent: event, // "before", "during", "after"
+	}
+	if err != nil {
+		metric.Error = err.Error()
+	}
+	mc.Record(metric)
+}
+
+// RecordObserveNotification records Observe notification latency
+func (mc *MetricsCollector) RecordObserveNotification(transport, path string, seq int, duration time.Duration, err error) {
+	metric := Metric{
+		Timestamp:  time.Now(),
+		Transport:  transport,
+		Operation:  "OBSERVE",
+		Path:       path,
+		Type:       LatencyMetric,
+		Value:      float64(duration.Microseconds()) / 1000.0,
+		Success:    err == nil,
+		ObserveSeq: seq,
+	}
+	if err != nil {
+		metric.Error = err.Error()
+	}
+	mc.Record(metric)
+}
+
+// RecordStreamingTransfer records streaming transfer metrics
+func (mc *MetricsCollector) RecordStreamingTransfer(transport, method, path string, payloadSize int, duration time.Duration, bytes int, transferMethod string, err error) {
+	metric := Metric{
+		Timestamp:      time.Now(),
+		Transport:      transport,
+		Operation:      method,
+		Path:           path,
+		Type:           LatencyMetric,
+		Value:          float64(duration.Microseconds()) / 1000.0,
+		PayloadSize:    payloadSize,
+		Success:        err == nil,
+		TransferMethod: transferMethod, // "stream" or "blockwise"
+	}
+	if err != nil {
+		metric.Error = err.Error()
+	}
+	mc.Record(metric)
+
+	// Also record bytes if successful
+	if err == nil && bytes > 0 {
+		mc.Record(Metric{
+			Timestamp:      time.Now(),
+			Transport:      transport,
+			Operation:      method,
+			Path:           path,
+			Type:           BytesMetric,
+			Value:          float64(bytes),
+			PayloadSize:    payloadSize,
+			Success:        true,
+			TransferMethod: transferMethod,
+		})
 	}
 }
 
