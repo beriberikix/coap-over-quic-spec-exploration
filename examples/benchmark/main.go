@@ -44,11 +44,14 @@ func main() {
 		clients = []harness.TransportClient{transports.NewQUICDatagramClient()}
 	case "udp":
 		clients = []harness.TransportClient{transports.NewUDPClient()}
+	case "dtls":
+		clients = []harness.TransportClient{transports.NewDTLSClient()}
 	case "all":
 		clients = []harness.TransportClient{
 			transports.NewQUICStreamClient(),
 			transports.NewQUICDatagramClient(),
 			transports.NewUDPClient(),
+			transports.NewDTLSClient(),
 		}
 	default:
 		log.Fatalf("Unknown transport: %s", *transport)

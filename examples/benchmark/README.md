@@ -1,9 +1,10 @@
 # CoAP Transport Benchmark Tool
 
 This tool provides comprehensive performance benchmarking for CoAP over different transport protocols:
-- **CoAP/QUIC Streams** - Reliable bidirectional streams
-- **CoAP/QUIC Datagrams** - Hybrid reliable/unreliable (RFC 9221)
-- **CoAP/UDP** - Traditional CoAP baseline
+- **CoAP/QUIC Streams** - Reliable bidirectional streams with TLS 1.3
+- **CoAP/QUIC Datagrams** - Hybrid reliable/unreliable (RFC 9221) with TLS 1.3
+- **CoAP/UDP** - Traditional CoAP baseline (unencrypted)
+- **CoAP/DTLS** - CoAP over UDP with DTLS 1.2 encryption (encrypted baseline)
 
 ## Features
 
@@ -18,7 +19,7 @@ This tool provides comprehensive performance benchmarking for CoAP over differen
 
 ### 1. Start a Server
 
-Choose one of the three server implementations:
+Choose one of the four server implementations:
 
 ```bash
 # CoAP/QUIC with datagrams (recommended for full feature testing)
@@ -29,8 +30,12 @@ go run main.go
 cd ../poc/server
 go run main.go
 
-# Or CoAP/UDP baseline
+# Or CoAP/UDP baseline (unencrypted)
 cd ../poc/udp-server
+go run main.go
+
+# Or CoAP/DTLS baseline (encrypted UDP for fair comparison)
+cd ../poc/udp-server-dtls
 go run main.go
 ```
 
@@ -47,6 +52,7 @@ go build
 ./benchmark --server localhost:5683 --transport quic-stream
 ./benchmark --server localhost:5683 --transport quic-datagram
 ./benchmark --server localhost:5683 --transport udp
+./benchmark --server localhost:5683 --transport dtls
 ```
 
 ## Command-Line Options
@@ -56,7 +62,7 @@ go build
     Server address (default "localhost:5683")
 
 -transport string
-    Transport to test: quic-stream, quic-datagram, udp, or all (default "all")
+    Transport to test: quic-stream, quic-datagram, udp, dtls, or all (default "all")
 
 -output string
     Output directory for CSV results (default "./results")
