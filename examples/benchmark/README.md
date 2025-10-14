@@ -41,28 +41,32 @@ go run main.go
 
 ### 2. Run Benchmark
 
+**Important**: Make sure the appropriate server is running for the transport you want to test.
+
 ```bash
 # Build the benchmark tool
 go build
 
-# Run benchmark against all transports
-./benchmark --server localhost:5683 --transport all
-
-# Or test a specific transport
-./benchmark --server localhost:5683 --transport quic-stream
-./benchmark --server localhost:5683 --transport quic-datagram
-./benchmark --server localhost:5683 --transport udp
-./benchmark --server localhost:5683 --transport dtls
+# Test each transport (each requires its corresponding server)
+./benchmark -transport quic-stream -server localhost:5683
+./benchmark -transport quic-datagram -server localhost:5683
+./benchmark -transport udp -server localhost:5683
+./benchmark -transport dtls -server localhost:5683
 ```
+
+**Transport → Server Mapping**:
+- `quic-stream` or `quic-datagram` → Use `server-datagram` or `server`
+- `udp` → Use `udp-server`
+- `dtls` → Use `udp-server-dtls`
 
 ## Command-Line Options
 
 ```
+-transport string (required)
+    Transport to test: quic-stream, quic-datagram, udp, or dtls
+
 -server string
     Server address (default "localhost:5683")
-
--transport string
-    Transport to test: quic-stream, quic-datagram, udp, dtls, or all (default "all")
 
 -output string
     Output directory for CSV results (default "./results")

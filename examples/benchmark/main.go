@@ -16,8 +16,16 @@ func main() {
 	// Command-line flags
 	serverAddr := flag.String("server", "localhost:5683", "Server address")
 	outputDir := flag.String("output", "./results", "Output directory for results")
-	transport := flag.String("transport", "all", "Transport to test (quic-stream, quic-datagram, udp, or all)")
+	transport := flag.String("transport", "", "Transport to test: quic-stream, quic-datagram, udp, or dtls (required)")
 	flag.Parse()
+
+	// Validate transport flag
+	if *transport == "" {
+		log.Println("Error: -transport flag is required")
+		log.Println("Usage: ./benchmark -transport <type> [-server <addr>] [-output <dir>]")
+		log.Println("Transport types: quic-stream, quic-datagram, udp, dtls")
+		os.Exit(1)
+	}
 
 	log.Printf("CoAP Transport Benchmark")
 	log.Printf("Server: %s", *serverAddr)
@@ -35,49 +43,39 @@ func main() {
 	// Get test scenarios
 	scenarios := harness.DefaultScenarios()
 
-	// Determine which transports to test
-	var clients []harness.TransportClient
+	// Select transport client
+	var client harness.TransportClient
 	switch *transport {
 	case "quic-stream":
-		clients = []harness.TransportClient{transports.NewQUICStreamClient()}
+		client = transports.NewQUICStreamClient()
 	case "quic-datagram":
-		clients = []harness.TransportClient{transports.NewQUICDatagramClient()}
+		client = transports.NewQUICDatagramClient()
 	case "udp":
-		clients = []harness.TransportClient{transports.NewUDPClient()}
+		client = transports.NewUDPClient()
 	case "dtls":
-		clients = []harness.TransportClient{transports.NewDTLSClient()}
-	case "all":
-		clients = []harness.TransportClient{
-			transports.NewQUICStreamClient(),
-			transports.NewQUICDatagramClient(),
-			transports.NewUDPClient(),
-			transports.NewDTLSClient(),
-		}
+		client = transports.NewDTLSClient()
 	default:
-		log.Fatalf("Unknown transport: %s", *transport)
+		log.Fatalf("Unknown transport: %s (valid options: quic-stream, quic-datagram, udp, dtls)", *transport)
 	}
 
 	// Run benchmarks
 	log.Println("=== Starting Benchmark Suite ===\n")
+	log.Printf("--- Testing Transport: %s ---\n", client.Name())
 	startTime := time.Now()
 
-	for _, client := range clients {
-		log.Printf("\n--- Testing Transport: %s ---\n", client.Name())
-
-		for _, scenario := range scenarios {
-			// Skip NON scenarios for transports that don't support them well
-			if scenario.IsNON && client.Name() == "quic-stream" {
-				log.Printf("Skipping %s (NON not applicable for streams)\n", scenario.Name)
-				continue
-			}
-
-			if err := runner.RunScenario(client, scenario); err != nil {
-				log.Printf("ERROR in scenario %s: %v\n", scenario.Name, err)
-			}
-
-			// Small delay between scenarios
-			time.Sleep(1 * time.Second)
+	for _, scenario := range scenarios {
+		// Skip NON scenarios for transports that don't support them well
+		if scenario.IsNON && client.Name() == "quic-stream" {
+			log.Printf("Skipping %s (NON not applicable for streams)\n", scenario.Name)
+			continue
 		}
+
+		if err := runner.RunScenario(client, scenario); err != nil {
+			log.Printf("ERROR in scenario %s: %v\n", scenario.Name, err)
+		}
+
+		// Small delay between scenarios
+		time.Sleep(1 * time.Second)
 	}
 
 	elapsed := time.Since(startTime)
