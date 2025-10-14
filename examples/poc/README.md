@@ -95,7 +95,11 @@ examples/poc/
 │   └── README.md
 ├── udp-server/            # CoAP/UDP server (baseline comparison)
 │   └── main.go
-└── udp-client/            # CoAP/UDP client (baseline comparison)
+├── udp-client/            # CoAP/UDP client (baseline comparison)
+│   └── main.go
+├── udp-server-dtls/       # CoAP/UDP+DTLS server (encrypted baseline)
+│   └── main.go
+└── udp-client-dtls/       # CoAP/UDP+DTLS client (encrypted baseline)
     └── main.go
 ```
 
@@ -249,7 +253,7 @@ The demos compare:
 
 ### 5. CoAP over UDP (Baseline)
 
-Standard CoAP over UDP for performance comparison.
+Standard CoAP over UDP for performance comparison (unencrypted).
 
 **Terminal 1: Start the Server**
 ```bash
@@ -273,7 +277,39 @@ The client runs 8 demos using CON (confirmable) and NON (non-confirmable) messag
 7. LED Toggle (CON)
 8. Mixed CON and NON Messages
 
-**Note**: All three implementations use the same port (5683), so only run one server at a time.
+---
+
+### 6. CoAP over UDP with DTLS (Encrypted Baseline)
+
+CoAP over UDP with DTLS 1.2 encryption for fair comparison against QUIC's built-in TLS 1.3.
+
+**Terminal 1: Start the DTLS Server**
+```bash
+cd udp-server-dtls
+go run main.go
+```
+
+**Terminal 2: Run the DTLS Client**
+```bash
+cd udp-client-dtls
+go run main.go
+```
+
+The client demonstrates the same 8 scenarios as UDP, but all traffic is encrypted with DTLS 1.2:
+- Uses the same TLS certificates as QUIC (from `certs/` directory)
+- Demonstrates certificate-based authentication
+- All messages (CON and NON) are encrypted at the transport layer
+- Provides a fair encrypted baseline for comparison
+
+**Key Differences from QUIC**:
+- **Handshake**: DTLS requires full handshake on every connection (no 0-RTT)
+- **Multiplexing**: UDP has no stream multiplexing (HOL blocking can occur)
+- **Connection Migration**: DTLS connections are tied to IP/port (no seamless handoff)
+- **Performance**: Additional encryption overhead compared to QUIC's integrated TLS
+
+This demonstrates that while DTLS provides security comparable to QUIC, it lacks QUIC's advanced features like 0-RTT resumption, stream multiplexing, and connection migration.
+
+**Note**: All server implementations use the same port (5683), so only run one server at a time.
 
 ## Server Endpoints
 
@@ -459,13 +495,14 @@ See the [benchmark tool](../benchmark/README.md) for detailed latency and throug
 - ✅ **Connection migration** - [Seamless network handoff demo](client-migration/README.md) (WiFi ↔ Cellular)
 - ✅ **Observe pattern (RFC 7641)** - Pub/sub notifications over long-lived QUIC streams
 - ✅ **Block-wise transfers (RFC 7959)** - Comparison showing QUIC streams eliminate block-wise overhead (7x faster!)
+- ✅ **DTLS for UDP** - Encrypted UDP baseline for fair security comparison (DTLS 1.2 vs TLS 1.3)
 
 ### Future Enhancements
 The spec defines additional features that could be implemented:
 
 - **Unidirectional streams** for NON messages (Section 5.3) - alternative to datagrams
-- **DTLS for UDP** - encrypted UDP baseline for fair comparison
-- **Benchmark integration** - Add 0-RTT, migration, Observe, and streaming metrics to benchmark tool
+- **Benchmark integration** - Add 0-RTT, migration, Observe, streaming, and DTLS metrics to benchmark tool
+- **DTLS session resumption** - Compare DTLS session tickets against QUIC's 0-RTT for fair latency comparison
 
 ## References
 
