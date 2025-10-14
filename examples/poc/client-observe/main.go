@@ -137,19 +137,14 @@ func registerObservation(conn *quic.Conn, path string) (*quic.Stream, string, er
 	token := []byte{0x01, 0x02, 0x03, 0x04}
 	request := common.NewMessage(message.Confirmable, common.GET, token)
 
+	// IMPORTANT: Add Observe option FIRST (option 6 must come before URIPath option 11)
+	// CoAP requires options in ascending order by option number
+	common.AddObserveOption(request, 0)
+
 	// Add path segments
 	pathSegments := splitPath(path)
 	for _, segment := range pathSegments {
 		common.AddPathOption(request, segment)
-	}
-
-	// Add Observe option (value=0 for registration)
-	common.AddObserveOption(request, 0)
-
-	// Debug: Log options before encoding
-	log.Printf("[DEBUG] Request has %d options before encoding", len(request.Options))
-	for i, opt := range request.Options {
-		log.Printf("[DEBUG]   Option %d: ID=%d, Value=%v", i, opt.ID, opt.Value)
 	}
 
 	// Encode request
@@ -160,7 +155,6 @@ func registerObservation(conn *quic.Conn, path string) (*quic.Stream, string, er
 		stream.Close()
 		return nil, "", fmt.Errorf("encode request: %w", err)
 	}
-	log.Printf("[DEBUG] Encoded request is %d bytes", requestLen)
 
 	// Send request (don't close stream - we need it for notifications)
 	_, err = stream.Write(requestData[:requestLen])
@@ -202,7 +196,7 @@ func registerObservation(conn *quic.Conn, path string) (*quic.Stream, string, er
 		return nil, "", fmt.Errorf("response missing Observe option")
 	}
 
-	log.Printf("  <- Initial response received (Observe seq=%d)", observeSeq)
+	log.Printf("  <- Initial response (seq=%d): %s", observeSeq, string(response.Payload))
 
 	// Return stream (keep open) and initial payload
 	return stream, string(response.Payload), nil
@@ -233,7 +227,7 @@ func receiveNotification(stream *quic.Stream) (string, error) {
 		return "", fmt.Errorf("notification missing Observe option")
 	}
 
-	log.Printf("  <- Notification received (Observe seq=%d)", observeSeq)
+	log.Printf("  <- Notification (seq=%d): %s", observeSeq, string(response.Payload))
 
 	return string(response.Payload), nil
 }

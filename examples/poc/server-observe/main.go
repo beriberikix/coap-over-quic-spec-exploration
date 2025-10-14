@@ -239,15 +239,8 @@ func (s *Server) handleStream(stream *quic.Stream) {
 	path := common.GetPath(request)
 	log.Printf("[STREAM %d] %s %s", stream.StreamID(), common.MethodToString(request.Code), path)
 
-	// Debug: Log all options
-	log.Printf("[DEBUG] Request has %d options", len(request.Options))
-	for i, opt := range request.Options {
-		log.Printf("[DEBUG]   Option %d: ID=%d, Value=%v", i, opt.ID, opt.Value)
-	}
-
 	// Check for Observe option
 	observeValue, hasObserve := common.GetObserveOption(request)
-	log.Printf("[DEBUG] Observe option check: hasObserve=%v, value=%d", hasObserve, observeValue)
 
 	if hasObserve {
 		if observeValue == 0 {
