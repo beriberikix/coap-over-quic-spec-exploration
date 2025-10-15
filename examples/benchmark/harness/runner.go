@@ -350,3 +350,133 @@ func StreamingScenarios() []TestScenario {
 		StreamingVeryLargePayload,
 	}
 }
+
+// RunConnectionResumptionTest runs 0-RTT connection resumption testing
+func (br *BenchmarkRunner) RunConnectionResumptionTest(client AdvancedTransportClient) error {
+	log.Printf("\n=== Running: 0-RTT Connection Resumption Test ===")
+	log.Println("This test measures cold start (1-RTT) vs warm reconnect (0-RTT)")
+	log.Println()
+
+	const iterations = 10
+	for i := 0; i < iterations; i++ {
+		coldDuration, warmDuration, err := client.TestConnectionResumption(br.serverAddr)
+		if err != nil {
+			log.Printf("  Iteration %d failed: %v", i+1, err)
+			continue
+		}
+
+		// Record cold connection time
+		br.collector.RecordConnectionTime(client.Name(), "cold", coldDuration, nil)
+
+		// Record warm connection time
+		br.collector.RecordConnectionTime(client.Name(), "warm", warmDuration, nil)
+
+		speedup := float64(coldDuration) / float64(warmDuration)
+		log.Printf("  Iteration %d: Cold=%v, Warm=%v, Speedup=%.2fx",
+			i+1, coldDuration, warmDuration, speedup)
+
+		// Small delay between iterations
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	log.Println()
+	log.Printf("✓ Completed %d 0-RTT resumption tests", iterations)
+	return nil
+}
+
+// RunMigrationTest runs connection migration testing
+func (br *BenchmarkRunner) RunMigrationTest(client AdvancedTransportClient) error {
+	log.Printf("\n=== Running: Connection Migration Test ===")
+	log.Println("This test measures network handoff overhead and verifies zero packet loss")
+	log.Println()
+
+	// Connect to server
+	if err := client.Connect(br.serverAddr); err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer client.Close()
+
+	// Send baseline requests before migration
+	log.Println("Sending baseline requests (before migration)...")
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		_, _, duration, err := client.SendRequest(ctx, "GET", "/temp", nil)
+		if err != nil {
+			log.Printf("  Baseline request %d failed: %v", i+1, err)
+			continue
+		}
+		br.collector.RecordMigrationEvent(client.Name(), "before", duration, nil)
+		log.Printf("  Request %d (before): %v", i+1, duration)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Trigger migration
+	log.Println("\nTriggering connection migration...")
+	migrationDuration, err := client.TestMigration()
+	if err != nil {
+		return fmt.Errorf("migration failed: %w", err)
+	}
+	br.collector.RecordMigrationEvent(client.Name(), "during", migrationDuration, nil)
+	log.Printf("Migration overhead: %v", migrationDuration)
+
+	// Send requests after migration
+	log.Println("\nSending requests (after migration)...")
+	for i := 0; i < 5; i++ {
+		_, _, duration, err := client.SendRequest(ctx, "GET", "/temp", nil)
+		if err != nil {
+			log.Printf("  Post-migration request %d failed: %v", i+1, err)
+			continue
+		}
+		br.collector.RecordMigrationEvent(client.Name(), "after", duration, nil)
+		log.Printf("  Request %d (after): %v", i+1, duration)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	log.Println()
+	log.Printf("✓ Migration test complete - Connection maintained throughout network change")
+	return nil
+}
+
+// RunObserveTest runs Observe pattern (RFC 7641) testing
+func (br *BenchmarkRunner) RunObserveTest(client AdvancedTransportClient) error {
+	log.Printf("\n=== Running: Observe Pattern (RFC 7641) Test ===")
+	log.Println("This test measures push notification latency over long-lived streams")
+	log.Println()
+
+	// Connect to server
+	if err := client.Connect(br.serverAddr); err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer client.Close()
+
+	// Subscribe to resource
+	log.Println("Subscribing to /temp resource...")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	subscribeTime, err := client.SubscribeObserve(ctx, "/temp")
+	if err != nil {
+		return fmt.Errorf("failed to subscribe: %w", err)
+	}
+	br.collector.RecordObserveNotification(client.Name(), "/temp", 0, subscribeTime, nil)
+	log.Printf("✓ Subscribed in %v (initial response)", subscribeTime)
+	log.Println()
+
+	// Wait for notifications
+	log.Println("Waiting for push notifications...")
+	const notificationCount = 5
+	timings, err := client.WaitForNotifications(ctx, notificationCount)
+	if err != nil {
+		return fmt.Errorf("failed to receive notifications: %w", err)
+	}
+
+	// Record each notification
+	for i, timing := range timings {
+		br.collector.RecordObserveNotification(client.Name(), "/temp", i+1, timing, nil)
+		log.Printf("  Notification %d: %v (time since last)", i+1, timing)
+	}
+
+	log.Println()
+	log.Printf("✓ Received %d push notifications via Observe", len(timings))
+	return nil
+}

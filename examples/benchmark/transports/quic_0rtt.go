@@ -158,6 +158,41 @@ func (c *QUIC0RTTClient) SendNON(ctx context.Context, method, path string, paylo
 // TestConnectionResumption tests 0-RTT connection resumption
 // Returns (cold connection duration, warm connection duration, error)
 func (c *QUIC0RTTClient) TestConnectionResumption(addr string) (time.Duration, time.Duration, error) {
+	// Set up if not already done
+	if c.transport == nil {
+		// Create TLS config with session cache for 0-RTT
+		c.tlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"coap-quic-poc"},
+			ClientSessionCache: tls.NewLRUClientSessionCache(100),
+		}
+
+		c.quicConfig = &quic.Config{
+			MaxIdleTimeout:  30 * time.Second,
+			KeepAlivePeriod: 10 * time.Second,
+			EnableDatagrams: true,
+		}
+
+		// Create UDP connection
+		var err error
+		c.udpConn, err = net.ListenUDP("udp", nil)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to create UDP connection: %w", err)
+		}
+
+		// Create Transport
+		c.transport = &quic.Transport{
+			Conn: c.udpConn,
+		}
+
+		// Resolve server address
+		c.serverAddr, err = net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			c.udpConn.Close()
+			return 0, 0, fmt.Errorf("failed to resolve address: %w", err)
+		}
+	}
+
 	// Cold start - initial connection (already done in Connect, but measure it)
 	coldStart := time.Now()
 	coldConn, err := c.transport.Dial(context.Background(), c.serverAddr, c.tlsConfig, c.quicConfig)

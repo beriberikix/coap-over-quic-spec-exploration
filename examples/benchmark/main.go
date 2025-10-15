@@ -12,6 +12,32 @@ import (
 	"github.com/golioth/coap-over-quic-spec-exploration/examples/benchmark/transports"
 )
 
+// runStandardScenarios runs the standard benchmark scenarios for a transport
+func runStandardScenarios(runner *harness.BenchmarkRunner, client harness.TransportClient, transport string) {
+	// Select appropriate scenarios based on transport
+	var scenarios []harness.TestScenario
+	if transport == "quic-streaming" {
+		scenarios = harness.StreamingScenarios()
+	} else {
+		scenarios = harness.DefaultScenarios()
+	}
+
+	for _, scenario := range scenarios {
+		// Skip NON scenarios for transports that don't support them well
+		if scenario.IsNON && client.Name() == "quic-stream" {
+			log.Printf("Skipping %s (NON not applicable for streams)\n", scenario.Name)
+			continue
+		}
+
+		if err := runner.RunScenario(client, scenario); err != nil {
+			log.Printf("ERROR in scenario %s: %v\n", scenario.Name, err)
+		}
+
+		// Small delay between scenarios
+		time.Sleep(1 * time.Second)
+	}
+}
+
 func main() {
 	// Command-line flags
 	serverAddr := flag.String("server", "localhost:5683", "Server address")
@@ -73,32 +99,50 @@ func main() {
 		log.Fatalf("Unknown transport: %s (run without -transport to see options)", *transport)
 	}
 
-	// Select appropriate scenarios based on transport
-	var scenarios []harness.TestScenario
-	if *transport == "quic-streaming" {
-		scenarios = harness.StreamingScenarios()
-	} else {
-		scenarios = harness.DefaultScenarios()
-	}
-
 	// Run benchmarks
 	log.Println("=== Starting Benchmark Suite ===\n")
 	log.Printf("--- Testing Transport: %s ---\n", client.Name())
 	startTime := time.Now()
 
-	for _, scenario := range scenarios {
-		// Skip NON scenarios for transports that don't support them well
-		if scenario.IsNON && client.Name() == "quic-stream" {
-			log.Printf("Skipping %s (NON not applicable for streams)\n", scenario.Name)
-			continue
-		}
+	// Check if this is an advanced transport with specialized testing
+	if advClient, ok := client.(harness.AdvancedTransportClient); ok {
+		switch *transport {
+		case "quic-0rtt":
+			log.Println("Running specialized 0-RTT connection resumption tests...")
+			if err := runner.RunConnectionResumptionTest(advClient); err != nil {
+				log.Printf("ERROR in 0-RTT test: %v\n", err)
+			}
+			// Also run a few regular scenarios for baseline
+			scenarios := []harness.TestScenario{
+				harness.SmallPayloadGET,
+				harness.SmallPayloadPOST,
+			}
+			for _, scenario := range scenarios {
+				if err := runner.RunScenario(client, scenario); err != nil {
+					log.Printf("ERROR in scenario %s: %v\n", scenario.Name, err)
+				}
+				time.Sleep(1 * time.Second)
+			}
 
-		if err := runner.RunScenario(client, scenario); err != nil {
-			log.Printf("ERROR in scenario %s: %v\n", scenario.Name, err)
-		}
+		case "quic-migration":
+			log.Println("Running specialized connection migration tests...")
+			if err := runner.RunMigrationTest(advClient); err != nil {
+				log.Printf("ERROR in migration test: %v\n", err)
+			}
 
-		// Small delay between scenarios
-		time.Sleep(1 * time.Second)
+		case "quic-observe":
+			log.Println("Running specialized Observe pattern tests...")
+			if err := runner.RunObserveTest(advClient); err != nil {
+				log.Printf("ERROR in Observe test: %v\n", err)
+			}
+
+		default:
+			// Advanced client but not a specialized transport - run normal scenarios
+			runStandardScenarios(runner, client, *transport)
+		}
+	} else {
+		// Standard transport - run normal scenarios
+		runStandardScenarios(runner, client, *transport)
 	}
 
 	elapsed := time.Since(startTime)
