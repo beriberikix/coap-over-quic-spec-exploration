@@ -16,7 +16,8 @@ import (
 func runStandardScenarios(runner *harness.BenchmarkRunner, client harness.TransportClient, transport string) {
 	// Select appropriate scenarios based on transport
 	var scenarios []harness.TestScenario
-	if transport == "quic-streaming" {
+	if transport == "quic-streaming" || transport == "udp-blockwise" {
+		// Both streaming and block-wise should use streaming scenarios for comparison
 		scenarios = harness.StreamingScenarios()
 	} else {
 		scenarios = harness.DefaultScenarios()
@@ -57,6 +58,7 @@ func main() {
 		log.Println("    dtls             - CoAP over UDP with DTLS 1.2")
 		log.Println("  Advanced transports:")
 		log.Println("    quic-streaming   - QUIC native streaming (vs block-wise)")
+		log.Println("    udp-blockwise    - UDP with RFC 7959 block-wise transfers")
 		log.Println("    quic-0rtt        - 0-RTT connection resumption testing")
 		log.Println("    quic-migration   - Connection migration testing")
 		log.Println("    quic-observe     - Observe pattern (RFC 7641) testing")
@@ -89,6 +91,8 @@ func main() {
 		client = transports.NewDTLSClient()
 	case "quic-streaming":
 		client = transports.NewQUICStreamingClient()
+	case "udp-blockwise":
+		client = transports.NewUDPBlockwiseClient()
 	case "quic-0rtt":
 		client = transports.NewQUIC0RTTClient()
 	case "quic-migration":

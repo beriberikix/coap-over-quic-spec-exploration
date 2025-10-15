@@ -90,7 +90,7 @@ def main():
     print(f"{'Transport':<20} {'Count':<8} {'Mean':<10} {'Median':<10} {'P95':<10} {'P99':<10} {'Min':<10} {'Max':<10}")
     print("-" * 98)
 
-    transports = ['quic-stream', 'quic-datagram', 'udp', 'dtls', 'quic-streaming', 'quic-0rtt', 'quic-migration', 'quic-observe']
+    transports = ['quic-stream', 'quic-datagram', 'udp', 'dtls', 'quic-streaming', 'udp-blockwise', 'quic-0rtt', 'quic-migration', 'quic-observe']
     for transport in transports:
         if transport in all_results:
             stats = all_results[transport]
@@ -198,6 +198,24 @@ def main():
         print(f"  Mean transfer time: {all_results['quic-streaming']['mean_ms']:.3f} ms")
         print(f"  Eliminates block-wise overhead")
         print(f"  Single request/response - no fragmentation")
+        print()
+
+    # Block-wise vs Streaming Comparison
+    if 'quic-streaming' in all_results and 'udp-blockwise' in all_results:
+        print("=== Streaming vs Block-wise Transfer Comparison ===\n")
+        streaming_mean = all_results['quic-streaming']['mean_ms']
+        blockwise_mean = all_results['udp-blockwise']['mean_ms']
+        speedup = blockwise_mean / streaming_mean if streaming_mean > 0 else 0
+
+        print(f"QUIC Streaming:    {streaming_mean:.3f} ms (single stream, no fragmentation)")
+        print(f"UDP Block-wise:    {blockwise_mean:.3f} ms (RFC 7959, 1024-byte blocks)")
+        print(f"Speedup:           {speedup:.1f}x faster with QUIC streaming!")
+        print()
+        print("Why is QUIC streaming faster?")
+        print("  • No block-wise negotiation overhead")
+        print("  • Single request/response instead of multiple round trips")
+        print("  • QUIC's built-in flow control and reliability")
+        print("  • Eliminates CoAP Block1/Block2 option processing")
         print()
 
     print()
