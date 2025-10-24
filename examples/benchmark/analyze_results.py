@@ -90,7 +90,7 @@ def main():
     print(f"{'Transport':<20} {'Count':<8} {'Mean':<10} {'Median':<10} {'P95':<10} {'P99':<10} {'Min':<10} {'Max':<10}")
     print("-" * 98)
 
-    transports = ['quic-stream', 'quic-datagram', 'udp', 'dtls', 'quic-streaming', 'udp-blockwise', 'quic-0rtt', 'quic-migration', 'quic-observe']
+    transports = ['quic-stream', 'quic-datagram', 'udp', 'dtls', 'quic-streaming', 'udp-blockwise', 'quic-0rtt', 'dtls-0rtt', 'quic-migration', 'dtls-migration', 'quic-observe']
     for transport in transports:
         if transport in all_results:
             stats = all_results[transport]
@@ -217,6 +217,101 @@ def main():
         print("  • QUIC's built-in flow control and reliability")
         print("  • Eliminates CoAP Block1/Block2 option processing")
         print()
+
+    # Session Resumption Comparison (DTLS vs QUIC)
+    if 'dtls-0rtt' in all_connection_times and 'quic-0rtt' in all_connection_times:
+        dtls_cold = all_connection_times['dtls-0rtt']['cold']
+        dtls_warm = all_connection_times['dtls-0rtt']['warm']
+        quic_cold = all_connection_times['quic-0rtt']['cold']
+        quic_warm = all_connection_times['quic-0rtt']['warm']
+
+        if dtls_cold and dtls_warm and quic_cold and quic_warm:
+            dtls_cold_mean = statistics.mean(dtls_cold)
+            dtls_warm_mean = statistics.mean(dtls_warm)
+            dtls_speedup = dtls_cold_mean / dtls_warm_mean if dtls_warm_mean > 0 else 0
+
+            quic_cold_mean = statistics.mean(quic_cold)
+            quic_warm_mean = statistics.mean(quic_warm)
+            quic_speedup = quic_cold_mean / quic_warm_mean if quic_warm_mean > 0 else 0
+
+            print("=== Session Resumption Comparison (DTLS vs QUIC) ===\n")
+            print("DTLS 1.2 Session Resumption (RFC 6347):")
+            print(f"  Cold start (full handshake):     {dtls_cold_mean:.3f} ms")
+            print(f"  Warm reconnect (abbreviated):    {dtls_warm_mean:.3f} ms")
+            print(f"  Speedup: {dtls_speedup:.1f}x faster")
+            print()
+            print("QUIC 0-RTT (TLS 1.3):")
+            print(f"  Cold start (1-RTT):              {quic_cold_mean:.3f} ms")
+            print(f"  Warm reconnect (0-RTT):          {quic_warm_mean:.3f} ms")
+            print(f"  Speedup: {quic_speedup:.1f}x faster")
+            print()
+
+            advantage = quic_speedup / dtls_speedup if dtls_speedup > 0 else 0
+            quic_faster = ((dtls_warm_mean - quic_warm_mean) / dtls_warm_mean) * 100 if dtls_warm_mean > 0 else 0
+
+            print(f"QUIC's 0-RTT provides {advantage:.1f}x better speedup than DTLS")
+            print(f"QUIC warm reconnect is {quic_faster:.0f}% faster than DTLS abbreviated handshake")
+            print()
+            print("Key Difference:")
+            print("  • DTLS abbreviated handshake still requires 1-RTT")
+            print("  • QUIC 0-RTT sends application data immediately (true 0-RTT)")
+            print("  • TLS 1.3 architectural advantage over DTLS 1.2")
+            print("  • Both offer significant improvement over full handshakes")
+            print()
+
+    # Connection Migration Comparison (DTLS Connection ID vs QUIC)
+    # Note: We'd need to extract migration times separately for each transport
+    # For now, show both if available
+    dtls_migration_times = []
+    quic_migration_times = []
+
+    # Re-analyze to separate migration times by transport
+    for csv_file in csv_files[:4]:
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row['metric_type'] == 'latency' and row.get('migration_event'):
+                    transport = row['transport']
+                    latency = float(row['value'])
+                    if transport == 'dtls-migration' and row['migration_event'] == 'during':
+                        dtls_migration_times.append(latency)
+                    elif transport == 'quic-migration' and row['migration_event'] == 'during':
+                        quic_migration_times.append(latency)
+
+    if dtls_migration_times or quic_migration_times:
+        print("=== Connection Migration Comparison ===\n")
+
+        if quic_migration_times:
+            quic_mig_mean = statistics.mean(quic_migration_times)
+            quic_mig_min = min(quic_migration_times)
+            quic_mig_max = max(quic_migration_times)
+            print("QUIC Connection Migration:")
+            print(f"  Migration overhead: {quic_mig_mean:.3f} ms (min: {quic_mig_min:.3f}, max: {quic_mig_max:.3f})")
+            print("  • Built-in to QUIC protocol from day 1")
+            print("  • Native path probing and validation")
+            print("  • Connection ID used by default")
+            print()
+
+        if dtls_migration_times:
+            dtls_mig_mean = statistics.mean(dtls_migration_times)
+            dtls_mig_min = min(dtls_migration_times)
+            dtls_mig_max = max(dtls_migration_times)
+            print("DTLS Connection ID (RFC 9146):")
+            print(f"  Migration overhead: {dtls_mig_mean:.3f} ms (min: {dtls_mig_min:.3f}, max: {dtls_mig_max:.3f})")
+            print("  • Extension to DTLS 1.2 for IoT devices")
+            print("  • Requires negotiation during handshake")
+            print("  • Allows connection to survive IP/port changes")
+            print()
+
+        if dtls_migration_times and quic_migration_times:
+            overhead_diff = ((dtls_mig_mean - quic_mig_mean) / quic_mig_mean) * 100
+            print(f"QUIC has {abs(overhead_diff):.0f}% {'lower' if overhead_diff > 0 else 'higher'} migration overhead")
+            print()
+            print("Key Insight:")
+            print("  Both protocols successfully maintain connections through network changes.")
+            print("  QUIC has architectural advantage (built-in), but DTLS can achieve")
+            print("  similar functionality with RFC 9146 extension.")
+            print()
 
     print()
 

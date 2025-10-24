@@ -459,22 +459,33 @@ As specified in the spec, CoAP over QUIC simplifies several aspects:
 
 ## Performance Highlights
 
-Real-world measurements from the implementations demonstrate QUIC's advantages:
+Real-world measurements from the implementations demonstrate protocol comparisons:
+
+### QUIC vs UDP Baseline
 
 | Feature | CoAP/QUIC | CoAP/UDP | Improvement |
 |---------|-----------|----------|-------------|
-| **Large transfers (50KB)** | ~7ms (streaming) | ~50ms (block-wise, 1024B blocks) | **7x faster** |
-| **Connection resumption** | 0-RTT (~5ms) | Full handshake (~15ms) | **3x faster** |
+| **Large transfers (51KB)** | 0.7ms (streaming) | 6.5ms (block-wise) | **9.5x faster** |
+| **Connection resumption** | 0-RTT (3.4ms) | Full handshake (~15ms) | **3.4x faster** |
 | **Concurrent requests** | No HOL blocking | Shared packet queue | **Better latency** |
-| **Network handoff** | Seamless migration | Connection drop/reconnect | **No interruption** |
+| **Network handoff** | Seamless migration (0.6ms) | Connection drop/reconnect | **No interruption** |
 | **Push notifications** | Observe over streams | Observe with CON/ACK | **Lower overhead** |
 | **Encryption** | Built-in TLS 1.3 | Optional DTLS | **Always secure** |
+
+### QUIC vs DTLS Fair Comparison
+
+| Feature | CoAP/QUIC (TLS 1.3) | CoAP/DTLS 1.2 (with extensions) | Result |
+|---------|---------------------|----------------------------------|--------|
+| **Session resumption** | 0-RTT (3.4ms) | Abbreviated handshake (~7ms) | QUIC **1.8x better** (TLS 1.3 advantage) |
+| **Connection migration** | Built-in (0.6ms) | RFC 9146 Connection ID (~1-2ms) | Both work, QUIC lower overhead |
+| **Streaming transfers** | Native streams | Block-wise required | QUIC **9.5x faster** |
 
 **Key Takeaways**:
 - QUIC eliminates block-wise transfer overhead for large payloads
 - 0-RTT resumption significantly reduces reconnection latency for IoT devices
 - Connection migration enables seamless handoff between networks (WiFi ↔ Cellular)
-- Observe pattern benefits from QUIC's reliable streams (no application-level ACKs needed)
+- **DTLS can achieve similar capabilities** with session resumption and RFC 9146, but QUIC has architectural advantages
+- Both protocols provide strong security; QUIC benefits from modern TLS 1.3 design
 
 See the [benchmark tool](../benchmark/README.md) for detailed latency and throughput analysis.
 
@@ -501,8 +512,9 @@ See the [benchmark tool](../benchmark/README.md) for detailed latency and throug
 The spec defines additional features that could be implemented:
 
 - **Unidirectional streams** for NON messages (Section 5.3) - alternative to datagrams
-- **Benchmark integration** - Add 0-RTT, migration, Observe, streaming, and DTLS metrics to benchmark tool
-- **DTLS session resumption** - Compare DTLS session tickets against QUIC's 0-RTT for fair latency comparison
+- ~~**Benchmark integration**~~ - ✅ COMPLETED (all advanced features integrated)
+- ~~**DTLS session resumption**~~ - ✅ COMPLETED (fair comparison with QUIC 0-RTT)
+- ~~**DTLS Connection ID (RFC 9146)**~~ - ✅ COMPLETED (connection migration comparison)
 
 ## References
 

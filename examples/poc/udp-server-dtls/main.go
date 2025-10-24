@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sync"
 
 	piondtls "github.com/pion/dtls/v3"
 	"github.com/golioth/coap-over-quic-poc/common"
@@ -19,6 +20,61 @@ import (
 // Server state
 type Server struct {
 	ledState bool
+}
+
+// InMemorySessionStore implements pion/dtls SessionStore interface for session caching
+// Enables DTLS session resumption (abbreviated handshake) for faster reconnections
+type InMemorySessionStore struct {
+	sessions map[string]*piondtls.Session
+	mutex    sync.RWMutex
+}
+
+func NewInMemorySessionStore() *InMemorySessionStore {
+	return &InMemorySessionStore{
+		sessions: make(map[string]*piondtls.Session),
+	}
+}
+
+func (s *InMemorySessionStore) Set(key []byte, session piondtls.Session) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	keyStr := string(key)
+	s.sessions[keyStr] = &session
+	log.Printf("  [Session Store] Cached session for key: %x (total: %d sessions)", key[:min(8, len(key))], len(s.sessions))
+
+	return nil
+}
+
+func (s *InMemorySessionStore) Get(key []byte) (piondtls.Session, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	keyStr := string(key)
+	if session, exists := s.sessions[keyStr]; exists {
+		log.Printf("  [Session Store] Retrieved cached session for key: %x (abbreviated handshake)", key[:min(8, len(key))])
+		return *session, nil
+	}
+
+	return piondtls.Session{}, fmt.Errorf("session not found")
+}
+
+func (s *InMemorySessionStore) Del(key []byte) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	keyStr := string(key)
+	delete(s.sessions, keyStr)
+	log.Printf("  [Session Store] Deleted session for key: %x", key[:min(8, len(key))])
+
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func main() {
@@ -46,6 +102,8 @@ func main() {
 	log.Println("Supports:")
 	log.Println("  - DTLS 1.2 encryption (RFC 6347)")
 	log.Println("  - TLS certificate-based authentication")
+	log.Println("  - Session resumption (abbreviated handshake) for faster reconnection")
+	log.Println("  - Connection ID (RFC 9146) for connection migration support")
 	log.Println("  - CON (confirmable) messages with ACK")
 	log.Println("  - NON (non-confirmable) messages")
 	log.Println("  - Retransmission and deduplication")
@@ -60,12 +118,20 @@ func main() {
 		log.Fatalf("Failed to load certificates: %v", err)
 	}
 
-	// Create DTLS config
+	// Create session store for session resumption (abbreviated handshake)
+	sessionStore := NewInMemorySessionStore()
+
+	// Create DTLS config with session resumption and Connection ID (RFC 9146) support
 	dtlsConfig := &piondtls.Config{
 		Certificates:         []tls.Certificate{certificate},
 		ExtendedMasterSecret: piondtls.RequireExtendedMasterSecret,
 		// Don't require client certificates for this demo
 		ClientAuth: piondtls.NoClientCert,
+		// Enable session caching for faster reconnection (abbreviated handshake)
+		SessionStore: sessionStore,
+		// Enable Connection ID (RFC 9146) for connection migration support
+		// Allows connections to survive IP/port changes (e.g., NAT rebinding, network handoff)
+		ConnectionIDGenerator: piondtls.RandomCIDGenerator(8), // 8-byte Connection ID
 	}
 
 	// Start DTLS server

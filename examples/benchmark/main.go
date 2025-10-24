@@ -59,8 +59,10 @@ func main() {
 		log.Println("  Advanced transports:")
 		log.Println("    quic-streaming   - QUIC native streaming (vs block-wise)")
 		log.Println("    udp-blockwise    - UDP with RFC 7959 block-wise transfers")
-		log.Println("    quic-0rtt        - 0-RTT connection resumption testing")
-		log.Println("    quic-migration   - Connection migration testing")
+		log.Println("    quic-0rtt        - QUIC 0-RTT connection resumption")
+		log.Println("    dtls-0rtt        - DTLS session resumption (abbreviated handshake)")
+		log.Println("    quic-migration   - QUIC connection migration")
+		log.Println("    dtls-migration   - DTLS Connection ID (RFC 9146) migration")
 		log.Println("    quic-observe     - Observe pattern (RFC 7641) testing")
 		os.Exit(1)
 	}
@@ -99,6 +101,10 @@ func main() {
 		client = transports.NewQUICMigrationClient()
 	case "quic-observe":
 		client = transports.NewQUICObserveClient()
+	case "dtls-0rtt":
+		client = transports.NewDTLS0RTTClient()
+	case "dtls-migration":
+		client = transports.NewDTLSMigrationClient()
 	default:
 		log.Fatalf("Unknown transport: %s (run without -transport to see options)", *transport)
 	}
@@ -111,10 +117,14 @@ func main() {
 	// Check if this is an advanced transport with specialized testing
 	if advClient, ok := client.(harness.AdvancedTransportClient); ok {
 		switch *transport {
-		case "quic-0rtt":
-			log.Println("Running specialized 0-RTT connection resumption tests...")
+		case "quic-0rtt", "dtls-0rtt":
+			if *transport == "quic-0rtt" {
+				log.Println("Running specialized QUIC 0-RTT connection resumption tests...")
+			} else {
+				log.Println("Running specialized DTLS session resumption tests...")
+			}
 			if err := runner.RunConnectionResumptionTest(advClient); err != nil {
-				log.Printf("ERROR in 0-RTT test: %v\n", err)
+				log.Printf("ERROR in resumption test: %v\n", err)
 			}
 			// Also run a few regular scenarios for baseline
 			scenarios := []harness.TestScenario{
@@ -128,8 +138,12 @@ func main() {
 				time.Sleep(1 * time.Second)
 			}
 
-		case "quic-migration":
-			log.Println("Running specialized connection migration tests...")
+		case "quic-migration", "dtls-migration":
+			if *transport == "quic-migration" {
+				log.Println("Running specialized QUIC connection migration tests...")
+			} else {
+				log.Println("Running specialized DTLS Connection ID (RFC 9146) migration tests...")
+			}
 			if err := runner.RunMigrationTest(advClient); err != nil {
 				log.Printf("ERROR in migration test: %v\n", err)
 			}
